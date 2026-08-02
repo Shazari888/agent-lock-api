@@ -209,9 +209,12 @@ function createInMemoryServices() {
   return { repository, authService };
 }
 
-async function startTestServer() {
+async function startTestServer(options = {}) {
   const services = createInMemoryServices();
-  const app = createApp(services);
+  const app = createApp({
+    ...services,
+    ...options
+  });
   const server = await new Promise((resolve) => {
     const instance = app.listen(0, () => resolve(instance));
   });
@@ -239,6 +242,68 @@ test("core agent and management flows work together", async () => {
     assert.deepEqual(await healthResponse.json(), {
       status: "ok",
       message: "Agent Guard API is healthy"
+    });
+
+    test("user routes accept lowercase bearer scheme and enforce rate limits", async () => {
+      const { baseUrl, close } = await startTestServer({
+        security: {
+          rateLimitWindowMs: 60 * 1000,
+          userRouteRateLimitMax: 2,
+          agentRouteRateLimitMax: 100
+        }
+      });
+
+      try {
+        const firstResponse = await fetch(`${baseUrl}/agents`, {
+          headers: {
+            authorization: "bearer valid-user-token"
+          }
+        });
+        assert.equal(firstResponse.status, 200);
+
+        const secondResponse = await fetch(`${baseUrl}/agents`, {
+          headers: {
+            authorization: "bearer valid-user-token"
+          }
+        });
+        assert.equal(secondResponse.status, 200);
+
+        const thirdResponse = await fetch(`${baseUrl}/agents`, {
+          headers: {
+            authorization: "bearer valid-user-token"
+          }
+        });
+        assert.equal(thirdResponse.status, 429);
+        assert.deepEqual(await thirdResponse.json(), {
+          error: "Rate limit exceeded for user routes"
+        });
+      } finally {
+        await close();
+      }
+    });
+
+    test("visualizer ui assets load with expected controls", async () => {
+      const { baseUrl, close } = await startTestServer();
+
+      try {
+        const uiResponse = await fetch(`${baseUrl}/ui`);
+        assert.equal(uiResponse.status, 200);
+        const html = await uiResponse.text();
+        assert.match(html, /Visual Dashboard & Editor/);
+        assert.match(html, /id="applyKillSwitch"/);
+        assert.match(html, /<option>DELETE<\/option>/);
+
+        const appJsResponse = await fetch(`${baseUrl}/ui/app.js`);
+        assert.equal(appJsResponse.status, 200);
+        const appJs = await appJsResponse.text();
+        assert.match(appJs, /applyKillSwitch/);
+        assert.match(appJs, /updateKillSwitch\(getValue\("killSwitchCommand"\)\)/);
+
+        const stylesResponse = await fetch(`${baseUrl}/ui/styles.css`);
+        assert.equal(stylesResponse.status, 200);
+      } finally {
+        await close();
+      }
     });
 
     const pricingResponse = await fetch(`${baseUrl}/pricing`);

@@ -400,6 +400,15 @@ function bindEvents() {
     }
   });
 
+  els.applyKillSwitch.addEventListener("click", async () => {
+    try {
+      await updateKillSwitch(getValue("killSwitchCommand"));
+    } catch (error) {
+      setStatus(error.message, true);
+      logResponse(error.message);
+    }
+  });
+
   els.sendRequest.addEventListener("click", async () => {
     try {
       await sendRequest();
@@ -464,6 +473,7 @@ function cacheElements() {
     "revokeAgent",
     "setContinue",
     "setStop",
+    "applyKillSwitch",
     "sendRequest"
   ].forEach((id) => {
     els[id] = document.getElementById(id);

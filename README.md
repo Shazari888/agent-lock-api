@@ -2,12 +2,36 @@
 
 A lightweight API for monitoring, controlling, and securing autonomous AI agents.
 
+Givng your autonomous agents a control plane for easily **monitoring, budget control, safety controls, and state/memory persistence**, with owner-level management via Supabase-authenticated user routes.
+
+Main features:
+
+1. **Agent lifecycle management**: create/list/update agents, rotate/revoke API keys.
+
+2. **Agent telemetry + spend guardrails**: `/pulse` logging and `/check-budget` stop/continue decisions.
+
+3. **Safety control**: kill switch (`CONTINUE`/`STOP`) per agent.
+
+4. **State continuity**: save/load state snapshots.
+
+5. **TTL memory store**: set/get/delete memory with size cap, expiry, and cleanup.
+
+6. **User dashboard**: markdown summary of all agents.
+
+7. **UI console**: `/ui` dashboard + request editor for manual operations.
+
 ## Local setup
 
 1. Copy `.env.example` to `.env.local` and fill in your Supabase values.
 2. Run `npm install`.
 3. Run `npm run dev`.
 4. Apply SQL migrations in `supabase/migrations` in timestamp order.
+
+Optional rate-limit tuning:
+
+- `RATE_LIMIT_WINDOW_MS` (default `60000`)
+- `AGENT_ROUTE_RATE_LIMIT_MAX` (default `60`)
+- `USER_ROUTE_RATE_LIMIT_MAX` (default `30`)
 
 ## Available endpoints
 
@@ -31,6 +55,7 @@ A lightweight API for monitoring, controlling, and securing autonomous AI agents
 - `DELETE /memory/delete/:key`
 
 Send the agent key in the `x-api-key` header.
+Agent-key routes are rate-limited per key/IP window.
 
 ### User bearer-token routes
 
@@ -44,6 +69,7 @@ Send the agent key in the `x-api-key` header.
 
 Send a Supabase access token in the `Authorization` header using the standard bearer format.
 These routes use the Supabase **anon key + user JWT** so RLS stays active.
+User routes are rate-limited per bearer-token/IP window.
 
 ## Premium pricing model (USDC)
 

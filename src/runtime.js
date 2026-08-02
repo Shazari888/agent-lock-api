@@ -77,7 +77,15 @@ function createRuntimeDependencies() {
   };
 
   return {
-    app: createApp({ repository, authService }),
+    app: createApp({
+      repository,
+      authService,
+      security: {
+        rateLimitWindowMs: config.rateLimitWindowMs,
+        agentRouteRateLimitMax: config.agentRouteRateLimitMax,
+        userRouteRateLimitMax: config.userRouteRateLimitMax
+      }
+    }),
     config,
     maintenance
   };
