@@ -19,9 +19,9 @@ function extractBearerToken(headerValue) {
     return null;
   }
 
-  const [scheme, token] = headerValue.split(" ");
+  const [scheme, token] = headerValue.trim().split(/\s+/);
 
-  if (scheme !== "Bearer" || !token) {
+  if (!scheme || scheme.toLowerCase() !== "bearer" || !token) {
     return null;
   }
 
@@ -46,13 +46,70 @@ function calculatePayloadBytes(key, value) {
   return Buffer.byteLength(JSON.stringify({ key, value }), "utf8");
 }
 
-function createApp({ repository, authService, now = () => new Date() }) {
+function createRateLimiter({ windowMs, maxRequests, getKey, errorMessage }) {
+  const requestWindowByKey = new Map();
+
+  return function rateLimit(req, res, next) {
+    const key = getKey(req);
+    const nowMs = Date.now();
+
+    for (const [existingKey, value] of requestWindowByKey.entries()) {
+      if (nowMs - value.windowStartMs > windowMs) {
+        requestWindowByKey.delete(existingKey);
+      }
+    }
+
+    const existing = requestWindowByKey.get(key);
+
+    if (!existing || nowMs - existing.windowStartMs > windowMs) {
+      requestWindowByKey.set(key, {
+        count: 1,
+        windowStartMs: nowMs
+      });
+      return next();
+    }
+
+    existing.count += 1;
+
+    if (existing.count > maxRequests) {
+      return res.status(429).json({ error: errorMessage });
+    }
+
+    next();
+  };
+}
+
+function createApp({ repository, authService, security = {}, now = () => new Date() }) {
+  const rateLimitWindowMs = Number(security.rateLimitWindowMs) || 60 * 1000;
+  const agentRouteRateLimitMax = Number(security.agentRouteRateLimitMax) || 240;
+  const userRouteRateLimitMax = Number(security.userRouteRateLimitMax) || 120;
   const app = express();
   const publicDir = path.join(process.cwd(), "public");
 
   app.use(cors());
   app.use(express.json({ limit: "120kb" }));
   app.use("/ui", express.static(publicDir));
+  app.disable("x-powered-by");
+
+  const agentRateLimit = createRateLimiter({
+    windowMs: rateLimitWindowMs,
+    maxRequests: agentRouteRateLimitMax,
+    getKey(req) {
+      const apiKey = req.headers["x-api-key"];
+      return `agent:${typeof apiKey === "string" && apiKey ? apiKey : req.ip || "unknown"}`;
+    },
+    errorMessage: "Rate limit exceeded for agent routes"
+  });
+
+  const userRateLimit = createRateLimiter({
+    windowMs: rateLimitWindowMs,
+    maxRequests: userRouteRateLimitMax,
+    getKey(req) {
+      const authorization = req.headers.authorization;
+      return `user:${typeof authorization === "string" && authorization ? authorization : req.ip || "unknown"}`;
+    },
+    errorMessage: "Rate limit exceeded for user routes"
+  });
 
   const authenticateApiKey = async (req, res, next) => {
     const apiKey = req.headers["x-api-key"];
@@ -121,11 +178,11 @@ function createApp({ repository, authService, now = () => new Date() }) {
     res.sendFile(path.join(publicDir, "index.html"));
   });
 
-  app.get("/test-auth", authenticateApiKey, (req, res) => {
+  app.get("/test-auth", agentRateLimit, authenticateApiKey, (req, res) => {
     res.status(200).json({ message: "Authenticated!", agent: req.agent });
   });
 
-  app.post("/pulse", authenticateApiKey, async (req, res) => {
+  app.post("/pulse", agentRateLimit, authenticateApiKey, async (req, res) => {
     const { task, progress, current_cost } = req.body;
     const normalizedProgress = parseNumber(progress);
     const normalizedCurrentCost = parseNumber(current_cost);
@@ -144,7 +201,7 @@ function createApp({ repository, authService, now = () => new Date() }) {
     res.status(200).json({ message: "Pulse logged successfully" });
   });
 
-  app.post("/check-budget", authenticateApiKey, async (req, res) => {
+  app.post("/check-budget", agentRateLimit, authenticateApiKey, async (req, res) => {
     const estimatedCost = parseNumber(req.body.estimated_cost_of_next_action);
     const dailyBudget = parseNumber(req.agent.daily_budget);
 
@@ -180,13 +237,13 @@ function createApp({ repository, authService, now = () => new Date() }) {
     });
   });
 
-  app.get("/kill-switch", authenticateApiKey, async (req, res) => {
+  app.get("/kill-switch", agentRateLimit, authenticateApiKey, async (req, res) => {
     const killSwitchEntry = await repository.getKillSwitchCommand(req.agent.id);
 
     res.status(200).json({ command: killSwitchEntry ? killSwitchEntry.command : "CONTINUE" });
   });
 
-  app.post("/save-state", authenticateApiKey, async (req, res) => {
+  app.post("/save-state", agentRateLimit, authenticateApiKey, async (req, res) => {
     const { state_summary } = req.body;
 
     if (!state_summary) {
@@ -198,13 +255,13 @@ function createApp({ repository, authService, now = () => new Date() }) {
     res.status(200).json({ message: "State snapshot saved successfully" });
   });
 
-  app.get("/load-state", authenticateApiKey, async (req, res) => {
+  app.get("/load-state", agentRateLimit, authenticateApiKey, async (req, res) => {
     const stateSnapshot = await repository.getStateSnapshot(req.agent.id);
 
     res.status(200).json({ state_summary: stateSnapshot ? stateSnapshot.state_summary : null });
   });
 
-  app.post("/memory/set", authenticateApiKey, async (req, res) => {
+  app.post("/memory/set", agentRateLimit, authenticateApiKey, async (req, res) => {
     const memoryKey = typeof req.body.key === "string" ? req.body.key.trim() : "";
     const memoryValue = req.body.value;
     const ttlHours = parseTtlHours(req.body.ttl_hours);
@@ -255,7 +312,7 @@ function createApp({ repository, authService, now = () => new Date() }) {
     });
   });
 
-  app.get("/memory/get/:key", authenticateApiKey, async (req, res) => {
+  app.get("/memory/get/:key", agentRateLimit, authenticateApiKey, async (req, res) => {
     const memoryKey = req.params.key;
 
     const item = await repository.getMemoryItem({
@@ -277,7 +334,7 @@ function createApp({ repository, authService, now = () => new Date() }) {
     });
   });
 
-  app.delete("/memory/delete/:key", authenticateApiKey, async (req, res) => {
+  app.delete("/memory/delete/:key", agentRateLimit, authenticateApiKey, async (req, res) => {
     const memoryKey = req.params.key;
     const deleted = await repository.deleteMemoryItem({
       agentId: req.agent.id,
@@ -291,7 +348,7 @@ function createApp({ repository, authService, now = () => new Date() }) {
     });
   });
 
-  app.post("/agents", authenticateUser, async (req, res) => {
+  app.post("/agents", userRateLimit, authenticateUser, async (req, res) => {
     const { agent_name, daily_budget } = req.body;
     const normalizedDailyBudget = parseNumber(daily_budget);
 
@@ -315,13 +372,13 @@ function createApp({ repository, authService, now = () => new Date() }) {
     });
   });
 
-  app.get("/agents", authenticateUser, async (req, res) => {
+  app.get("/agents", userRateLimit, authenticateUser, async (req, res) => {
     const agents = await req.userRepository.listAgentsForUser(req.user.id);
 
     res.status(200).json({ agents });
   });
 
-  app.patch("/agents/:agentId", authenticateUser, async (req, res) => {
+  app.patch("/agents/:agentId", userRateLimit, authenticateUser, async (req, res) => {
     const updates = {};
 
     if (req.body.agent_name !== undefined) {
@@ -361,7 +418,7 @@ function createApp({ repository, authService, now = () => new Date() }) {
     res.status(200).json({ message: "Agent updated successfully", agent: updatedAgent });
   });
 
-  app.post("/agents/:agentId/rotate-key", authenticateUser, async (req, res) => {
+  app.post("/agents/:agentId/rotate-key", userRateLimit, authenticateUser, async (req, res) => {
     const apiKey = generateApiKey();
     const rotatedAgent = await req.userRepository.rotateAgentKeyForUser({
       userId: req.user.id,
@@ -382,7 +439,7 @@ function createApp({ repository, authService, now = () => new Date() }) {
     });
   });
 
-  app.post("/agents/:agentId/revoke", authenticateUser, async (req, res) => {
+  app.post("/agents/:agentId/revoke", userRateLimit, authenticateUser, async (req, res) => {
     const revokedAgent = await req.userRepository.revokeAgentForUser({
       userId: req.user.id,
       agentId: req.params.agentId,
@@ -400,7 +457,7 @@ function createApp({ repository, authService, now = () => new Date() }) {
     });
   });
 
-  app.post("/agents/:agentId/kill-switch", authenticateUser, async (req, res) => {
+  app.post("/agents/:agentId/kill-switch", userRateLimit, authenticateUser, async (req, res) => {
     const { command } = req.body;
 
     if (!["CONTINUE", "STOP"].includes(command)) {
@@ -425,7 +482,7 @@ function createApp({ repository, authService, now = () => new Date() }) {
     });
   });
 
-  app.get("/dashboard", authenticateUser, async (req, res) => {
+  app.get("/dashboard", userRateLimit, authenticateUser, async (req, res) => {
     const dashboardData = await req.userRepository.getDashboardForUser(req.user.id, now());
     const markdown = buildDashboardMarkdown(dashboardData);
 
