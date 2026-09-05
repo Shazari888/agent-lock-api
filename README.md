@@ -35,7 +35,7 @@ AgentLock is a deterministic command policy decision API. It never executes comm
 
 ## Endpoints (v1)
 
-- `GET /healthz`
+- `GET /health`
 - `POST /v1/validate`
 - `POST /v1/validate/batch`
 - `GET /v1/policies/:policyId`

@@ -15,7 +15,7 @@ const headers = {
 describe("v1 routes", () => {
   it("serves health endpoint", async () => {
     const app = createTestApp();
-    const response = await app.inject({ method: "GET", url: "/healthz" });
+    const response = await app.inject({ method: "GET", url: "/health" });
     expect(response.statusCode).toBe(200);
     expect(response.json().status).toBe("ok");
     await app.close();
