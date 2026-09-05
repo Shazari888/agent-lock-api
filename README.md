@@ -1,111 +1,100 @@
-# Agent Guard API
+# AgentLock API (v1)
 
-A lightweight API for monitoring, controlling, and securing autonomous AI agents.
+AgentLock is a deterministic command policy decision API. It never executes commands and returns only `ALLOW`, `BLOCK`, or `REVIEW`.
 
-Givng your autonomous agents a control plane for easily **monitoring, budget control, safety controls, and state/memory persistence**, with owner-level management via Supabase-authenticated user routes.
+## Product boundary
 
-Main features:
+1. Deterministic policy decisions only.
+2. No command execution.
+3. Fail closed on malformed input, auth failure, parser uncertainty, and internal failures.
+4. v1 excludes LLM-authoritative allow paths.
 
-1. **Agent lifecycle management**: create/list/update agents, rotate/revoke API keys.
+## Stack
 
-2. **Agent telemetry + spend guardrails**: `/pulse` logging and `/check-budget` stop/continue decisions.
+- TypeScript (strict)
+- Fastify
+- Prisma + PostgreSQL
+- Zod env parsing
+- OpenAPI scaffold at `docs/openapi.yaml` and `/docs`
+- Structured logging with header redaction
+- Vitest unit/integration/security tests
 
-3. **Safety control**: kill switch (`CONTINUE`/`STOP`) per agent.
+## Quick start
 
-4. **State continuity**: save/load state snapshots.
+1. Copy `.env.example` to `.env.local`.
+2. Install dependencies:
+   - `npm install`
+3. Generate Prisma client:
+   - `npm run prisma:generate`
+4. Apply database migrations:
+   - `npx prisma migrate deploy`
+5. Start dev server:
+   - `npm run dev`
+6. Seed a first tenant and policy:
+   - `npm run seed`
 
-5. **TTL memory store**: set/get/delete memory with size cap, expiry, and cleanup.
+## Endpoints (v1)
 
-6. **User dashboard**: markdown summary of all agents.
+- `GET /healthz`
+- `POST /v1/validate`
+- `POST /v1/validate/batch`
+- `GET /v1/policies/:policyId`
+- `GET /v1/audit`
+- `POST /v1/keys`
 
-7. **UI console**: `/ui` dashboard + request editor for manual operations.
+All `/v1/*` endpoints are tenant-scoped via:
 
-## Local setup
+- `x-tenant-id`
+- `x-api-key` (except bootstrap key creation flow)
 
-1. Copy `.env.example` to `.env.local` and fill in your Supabase values.
-2. Run `npm install`.
-3. Run `npm run dev`.
-4. Apply SQL migrations in `supabase/migrations` in timestamp order.
+## First-run API flow
 
-Optional rate-limit tuning:
+1. Create first API key for a tenant with bootstrap token:
 
-- `RATE_LIMIT_WINDOW_MS` (default `60000`)
-- `AGENT_ROUTE_RATE_LIMIT_MAX` (default `60`)
-- `USER_ROUTE_RATE_LIMIT_MAX` (default `30`)
+```bash
+curl -sS -X POST http://localhost:3000/v1/keys \
+  -H "content-type: application/json" \
+  -H "x-bootstrap-token: replace-with-long-random-bootstrap-token" \
+  -d '{
+    "tenant_id": "tenant_demo",
+    "name": "default-client",
+    "scopes": ["validate:write", "audit:read", "policies:read", "keys:write"]
+  }'
+```
 
-## Available endpoints
+2. Validate one command:
 
-### Public
+```bash
+curl -sS -X POST http://localhost:3000/v1/validate \
+  -H "content-type: application/json" \
+  -H "x-tenant-id: tenant_demo" \
+  -H "x-api-key: <returned_api_key>" \
+  -d '{
+    "policy_id": "policy_default",
+    "command": "echo hello",
+    "shell": "bash",
+    "context_trust": {
+      "declared": "trusted",
+      "observed": "trusted",
+      "verified": "trusted"
+    },
+    "integrity": {}
+  }'
+```
 
-- `GET /` - basic runtime check
-- `GET /health` - health status
-- `GET /pricing` - premium price schedule and limits
-- `GET /ui` - visual dashboard and request editor
+## Enforcement modes
 
-### Agent API key routes
+- `OBSERVE`: policy violations downgrade to `REVIEW` (except fail-closed reasons).
+- `REVIEW`: decisions require human review (except fail-closed reasons remain `BLOCK`).
+- `ENFORCE`: strict policy result.
 
-- `GET /test-auth`
-- `POST /pulse`
-- `POST /check-budget`
-- `GET /kill-switch`
-- `POST /save-state`
-- `GET /load-state`
-- `POST /memory/set`
-- `GET /memory/get/:key`
-- `DELETE /memory/delete/:key`
+Emergency bypass only downgrades policy-rule blocks to `REVIEW`; fail-closed conditions still `BLOCK`.
 
-Send the agent key in the `x-api-key` header.
-Agent-key routes are rate-limited per key/IP window.
+## Security controls
 
-### User bearer-token routes
-
-- `POST /agents`
-- `GET /agents`
-- `PATCH /agents/:agentId`
-- `POST /agents/:agentId/rotate-key`
-- `POST /agents/:agentId/revoke`
-- `POST /agents/:agentId/kill-switch`
-- `GET /dashboard`
-
-Send a Supabase access token in the `Authorization` header using the standard bearer format.
-These routes use the Supabase **anon key + user JWT** so RLS stays active.
-User routes are rate-limited per bearer-token/IP window.
-
-## Premium pricing model (USDC)
-
-- Base read (`GET`): **0.008**
-- Base write (`POST/PATCH`): **0.009**
-- Base delete (`DELETE`): **0.005**
-- Dashboard/report generation: **0.012**
-- Security actions (rotate/revoke/kill-switch update): **0.012**
-
-### Memory TTL pricing
-
-- `ttl_hours <= 24`: **0.009**
-- `25..168` (up to 7 days): **0.012**
-- `169..720` (custom up to 30 days): **0.014**
-
-### Memory limits and retention
-
-- Default TTL: **24h**
-- Supported TTL: **1..720h** (up to 30 days)
-- Payload limit: **100KB** hard cap per item
-- Expired memory is filtered at read time and cleaned by scheduled background cleanup.
-
-## Testing
-
-Run `npm test` to execute the automated API tests.
-
-## Deployment
-
-`vercel.json` and `api/index.js` are included so the app can be deployed to Vercel.
-
-## Schema updates
-
-Migrations now cover:
-
-- base tables and RLS policies
-- synced `public.users` rows for Supabase auth users
-- hashed agent API keys and lifecycle columns
-- unique snapshot/kill-switch constraints
-- memory storage table with TTL metadata and RLS
+- Rate limiting
+- Request timeout
+- Stable error shape with request ID
+- Tenant isolation on repository interfaces
+- API key hashing + revocation
+- Redacted auth headers in logs

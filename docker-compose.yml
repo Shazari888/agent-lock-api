@@ -1,0 +1,32 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agentlock
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  api:
+    build: .
+    depends_on:
+      - db
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/agentlock?schema=public
+      LOG_LEVEL: info
+      RATE_LIMIT_MAX: 120
+      RATE_LIMIT_WINDOW_MS: 60000
+      REQUEST_TIMEOUT_MS: 5000
+      BOOTSTRAP_TOKEN: replace-with-long-random-bootstrap-token
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
+

@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Decision {
+  ALLOW
+  BLOCK
+  REVIEW
+}
+
+enum EnforcementMode {
+  OBSERVE
+  REVIEW
+  ENFORCE
+}
+
+model Tenant {
+  id        String     @id @default(cuid())
+  name      String
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  keys      ApiKey[]
+  policies  Policy[]
+  audits    AuditEvent[]
+
+  @@map("tenants")
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  tenantId   String    @map("tenant_id")
+  name       String
+  keyHash    String    @unique @map("key_hash")
+  keyPrefix  String    @map("key_prefix")
+  scopes     Json
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, revokedAt], map: "idx_api_keys_tenant_revoked")
+  @@map("api_keys")
+}
+
+model Policy {
+  id                    String          @id @default(cuid())
+  tenantId              String          @map("tenant_id")
+  name                  String
+  version               String
+  mode                  EnforcementMode
+  emergencyBypass       Boolean         @default(false) @map("emergency_bypass")
+  blockedCommands       Json            @map("blocked_commands")
+  blockedPatterns       Json            @map("blocked_patterns")
+  requireVerifiedContext Boolean        @default(false) @map("require_verified_context")
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+  tenant                Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  audits                AuditEvent[]
+
+  @@index([tenantId], map: "idx_policies_tenant")
+  @@map("policies")
+}
+
+model AuditEvent {
+  id                  String   @id @default(cuid())
+  tenantId            String   @map("tenant_id")
+  policyId            String?  @map("policy_id")
+  requestId           String   @map("request_id")
+  decision            Decision
+  reasonCodes         Json     @map("reason_codes")
+  commandHash         String?  @map("command_hash")
+  expectedExecutionHash String? @map("expected_execution_hash")
+  executionStatus     String?  @map("execution_status")
+  identityBinding     Json?    @map("identity_binding")
+  contextBinding      Json?    @map("context_binding")
+  policyVersion       String?  @map("policy_version")
+  expiresAt           DateTime? @map("expires_at")
+  contextDeclared     String?  @map("context_declared")
+  contextObserved     String?  @map("context_observed")
+  contextVerified     String?  @map("context_verified")
+  createdAt           DateTime @default(now()) @map("created_at")
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  policy              Policy?  @relation(fields: [policyId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt], map: "idx_audit_tenant_created")
+  @@map("audit_events")
+}
