@@ -82,6 +82,16 @@ curl -sS -X POST http://localhost:3000/v1/validate \
   }'
 ```
 
+3. Run one-command production smoke test from your machine:
+
+```bash
+AGENTLOCK_BASE_URL="https://agent-lock-api-production.up.railway.app" \
+BOOTSTRAP_TOKEN="<your-bootstrap-token>" \
+TENANT_ID="tenant_demo" \
+POLICY_ID="policy_default" \
+npm run smoke:prod
+```
+
 ## Enforcement modes
 
 - `OBSERVE`: policy violations downgrade to `REVIEW` (except fail-closed reasons).

@@ -17,7 +17,8 @@
     "test:security": "vitest run test/security",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
-    "seed": "tsx src/scripts/seed.ts"
+    "seed": "tsx src/scripts/seed.ts",
+    "smoke:prod": "tsx src/scripts/smokeProd.ts"
   },
   "keywords": [],
   "author": "",
