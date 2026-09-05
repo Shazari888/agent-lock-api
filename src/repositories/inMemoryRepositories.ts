@@ -9,6 +9,7 @@ import type {
 } from "./interfaces.js";
 
 type InMemoryState = {
+  tenants: { id: string; name: string }[];
   keys: ApiKeyRecord[];
   policies: PolicyRecord[];
   audits: AuditRecord[];
@@ -16,6 +17,7 @@ type InMemoryState = {
 
 export function createInMemoryRepository(seed?: Partial<InMemoryState>): RepositoryBundle {
   const state: InMemoryState = {
+    tenants: seed?.tenants ?? [],
     keys: seed?.keys ?? [],
     policies: seed?.policies ?? [],
     audits: seed?.audits ?? []
@@ -50,6 +52,14 @@ export function createInMemoryRepository(seed?: Partial<InMemoryState>): Reposit
     async countTenantKeys(tenant_id) {
       return state.keys.filter((key) => key.tenant_id === tenant_id).length;
     },
+    async ensureTenant(tenant_id, tenant_name) {
+      const existing = state.tenants.find((tenant) => tenant.id === tenant_id);
+      if (existing) {
+        existing.name = tenant_name;
+        return;
+      }
+      state.tenants.push({ id: tenant_id, name: tenant_name });
+    },
     async getPolicyById(tenant_id, policy_id) {
       return state.policies.find((policy) => policy.tenant_id === tenant_id && policy.id === policy_id) ?? null;
     },
@@ -65,4 +75,3 @@ export function createInMemoryRepository(seed?: Partial<InMemoryState>): Reposit
     }
   };
 }
-

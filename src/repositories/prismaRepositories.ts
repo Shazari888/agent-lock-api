@@ -142,6 +142,13 @@ export function createPrismaRepository(prisma: PrismaClient): RepositoryBundle {
     async countTenantKeys(tenant_id) {
       return prisma.apiKey.count({ where: { tenantId: tenant_id } });
     },
+    async ensureTenant(tenant_id, tenant_name) {
+      await prisma.tenant.upsert({
+        where: { id: tenant_id },
+        update: { name: tenant_name },
+        create: { id: tenant_id, name: tenant_name }
+      });
+    },
     async getPolicyById(tenant_id, policy_id) {
       const record = await prisma.policy.findFirst({ where: { id: policy_id, tenantId: tenant_id } });
       return record ? mapPolicyRecord(record) : null;

@@ -314,6 +314,7 @@ export async function registerV1Routes(app: FastifyInstance) {
           }
         });
       }
+      await app.repositories.ensureTenant(payload.tenant_id, `Tenant ${payload.tenant_id}`);
     }
 
     const created = await app.repositories.createApiKey(payload);

@@ -60,6 +60,7 @@ export type AuthRepository = {
   updateApiKeyLastUsed(tenant_id: string, key_id: string, timestamp: string): Promise<void>;
   createApiKey(input: CreateApiKeyInput): Promise<{ id: string; key_prefix: string; plaintext_key: string }>;
   countTenantKeys(tenant_id: string): Promise<number>;
+  ensureTenant(tenant_id: string, tenant_name: string): Promise<void>;
 };
 
 export type PolicyRepository = {
@@ -72,4 +73,3 @@ export type AuditRepository = {
 };
 
 export type RepositoryBundle = AuthRepository & PolicyRepository & AuditRepository;
-
