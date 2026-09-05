@@ -181,6 +181,9 @@ export function createPrismaRepository(prisma: PrismaClient): RepositoryBundle {
         take: limit
       });
       return rows.map(mapAuditRecord);
+    },
+    async ping() {
+      await prisma.$queryRaw`SELECT 1`;
     }
   };
 }

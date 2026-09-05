@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifySensible from "@fastify/sensible";
 import fastifySwagger from "@fastify/swagger";
@@ -40,6 +41,30 @@ export function createApp(env: Env, repositories: RepositoryBundle) {
 
   app.setErrorHandler((error, request, reply) => {
     request.log.error({ err: error }, "Unhandled error");
+    const isPrismaError =
+      error instanceof Prisma.PrismaClientInitializationError ||
+      error instanceof Prisma.PrismaClientKnownRequestError ||
+      error instanceof Prisma.PrismaClientRustPanicError ||
+      error instanceof Prisma.PrismaClientValidationError;
+
+    if (isPrismaError) {
+      const prismaCode =
+        error instanceof Prisma.PrismaClientKnownRequestError ? error.code : "PRISMA_RUNTIME_ERROR";
+      void reply.code(500).send({
+        request_id: request.id,
+        decision: "BLOCK",
+        reason_codes: ["INTERNAL_ERROR"],
+        error: {
+          code: "DATABASE_ERROR",
+          message: "Database operation failed",
+          details: {
+            prisma_code: prismaCode
+          }
+        }
+      });
+      return;
+    }
+
     void reply.code(500).send({
       request_id: request.id,
       decision: "BLOCK",

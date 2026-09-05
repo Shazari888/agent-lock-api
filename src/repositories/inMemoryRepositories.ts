@@ -72,6 +72,9 @@ export function createInMemoryRepository(seed?: Partial<InMemoryState>): Reposit
     },
     async listAuditRecords(tenant_id, limit) {
       return state.audits.filter((audit) => audit.tenant_id === tenant_id).slice(0, limit);
+    },
+    async ping() {
+      return;
     }
   };
 }

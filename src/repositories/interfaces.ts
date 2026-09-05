@@ -70,6 +70,7 @@ export type PolicyRepository = {
 export type AuditRepository = {
   createAuditRecord(entry: AuditRecordCreate): Promise<void>;
   listAuditRecords(tenant_id: string, limit: number): Promise<AuditRecord[]>;
+  ping(): Promise<void>;
 };
 
 export type RepositoryBundle = AuthRepository & PolicyRepository & AuditRepository;
